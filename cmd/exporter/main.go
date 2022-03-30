@@ -16,7 +16,8 @@ import (
 	log "github.com/sirupsen/logrus"
 	"github.com/urfave/cli/v2"
 
-	"github.com/dafnifacility/flatcar-linux-ue-exporter/internal/html"
+	"github.com/dafnifacility/flatcar-linux-ue-exporter/internal/pkg/html"
+	"github.com/dafnifacility/flatcar-linux-ue-exporter/internal/pkg/kernel"
 )
 
 const (
@@ -132,7 +133,7 @@ func getSystemRelease() error {
 	} else {
 		metricCurrentOSVersion.WithLabelValues(rel["ID"], rel["VERSION"], rel["FLATCAR_BOARD"]).Set(1)
 	}
-	kv, err := getKernelVersion()
+	kv, err := kernel.Version()
 	if err != nil {
 		log.WithError(err).Warning("unable to get kernel version")
 	} else {

@@ -1,6 +1,6 @@
 //go:build !linux
 
-package main
+package kernel
 
 // This provides a little function to extract the Kernel version from the
 // uname() syscall, however we can't use it on non-Linux platforms, so we just
@@ -8,6 +8,6 @@ package main
 
 import "errors"
 
-func getKernelVersion() (string, error) {
+func Version() (string, error) {
 	return "notlinux", errors.New("not linux")
 }
