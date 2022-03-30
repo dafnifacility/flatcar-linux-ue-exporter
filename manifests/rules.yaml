@@ -1,0 +1,30 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: update-engine-rules
+spec:
+  groups:
+    - name: update-monitoring
+      rules:
+        - alert: FlatcarNodeNotCheckingForUpdates
+          annotations:
+            description: Flatcar node {{ $labels.node }} has not checked for updates for > 1hour
+            message: Update engine may be broken
+            severity_level: warning
+            operating_system: flatcar_linux
+          expr: |
+            max(time()-coreos_update_engine_last_checked_time_s) by (node)>3600
+          for: 1m
+          labels:
+            severity: warning
+        - alert: FlatcarNodeUpdateEngineReportingErrorEvent
+          annotations:
+            description: Flatcar node {{ $labels.node }} is in the update error state
+            message: Update engine may be broken
+            severity_level: warning
+            operating_system: flatcar_linux
+          expr: |
+            sum(coreos_update_engine_status{op="REPORTING_ERROR_EVENT"}) by (node)==1
+          for: 1m
+          labels:
+            severity: warning

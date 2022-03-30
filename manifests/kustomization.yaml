@@ -3,3 +3,7 @@ kind: Kustomization
 resources:
   - daemonset.yaml
   - monitor.yaml
+  - rules.yaml
+images:
+  - name: ghcr.io/dafnifacility/flatcar-linux-ue-exporter
+    newTag: v0.1.0
