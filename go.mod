@@ -1,4 +1,4 @@
-module gitlab.dafni.rl.ac.uk/dafni/tools/ue-exporter
+module github.com/dafnifacility/flatcar-linux-ue-exporter
 
 go 1.18
 
