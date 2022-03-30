@@ -1,0 +1,84 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: update-agent-engine-exporter
+spec:
+  selector:
+    matchLabels:
+      app: flatcar-linux-ue-exporter
+  template:
+    metadata:
+      labels:
+        app: flatcar-linux-ue-exporter
+    spec:
+      containers:
+        - command:
+            - /bin/ue-exporter
+          env:
+            - name: UPDATE_AGENT_NODE
+              valueFrom:
+                fieldRef:
+                  apiVersion: v1
+                  fieldPath: spec.nodeName
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  apiVersion: v1
+                  fieldPath: metadata.namespace
+          image: ghcr.io/dafnifacility/flatcar-linux-ue-exporter:v0.1.0
+          imagePullPolicy: IfNotPresent
+          name: exporter
+          resources:
+            limits:
+              cpu: 100m
+              memory: 512mi
+            requests:
+              cpu: 100m
+              memory: 512mi
+          securityContext:
+            runAsUser: 0
+            readOnlyRootFilesystem: true
+          terminationMessagePath: /dev/termination-log
+          terminationMessagePolicy: File
+          volumeMounts:
+            - mountPath: /var/run/dbus
+              name: var-run-dbus
+            - mountPath: /etc/flatcar
+              name: etc-flatcar
+              readOnly: true
+            - mountPath: /usr/share/flatcar
+              name: usr-share-flatcar
+              readOnly: true
+            - mountPath: /etc/os-release
+              name: etc-os-release
+              readOnly: true
+      dnsPolicy: ClusterFirst
+      restartPolicy: Always
+      securityContext: {}
+      terminationGracePeriodSeconds: 30
+      tolerations:
+        - effect: NoSchedule
+          key: node-role.kubernetes.io/master
+          operator: Exists
+      volumes:
+        - hostPath:
+            path: /var/run/dbus
+            type: ""
+          name: var-run-dbus
+        - hostPath:
+            path: /etc/flatcar
+            type: ""
+          name: etc-flatcar
+        - hostPath:
+            path: /usr/share/flatcar
+            type: ""
+          name: usr-share-flatcar
+        - hostPath:
+            path: /etc/os-release
+            type: ""
+          name: etc-os-release
+  updateStrategy:
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+    type: RollingUpdate
