@@ -10,6 +10,9 @@ spec:
     metadata:
       labels:
         app: flatcar-linux-ue-exporter
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "26756"
     spec:
       containers:
         - command:
@@ -25,16 +28,16 @@ spec:
                 fieldRef:
                   apiVersion: v1
                   fieldPath: metadata.namespace
-          image: ghcr.io/dafnifacility/flatcar-linux-ue-exporter:v0.1.0
+          image: ghcr.io/dafnifacility/flatcar-linux-ue-exporter:main
           imagePullPolicy: IfNotPresent
           name: exporter
           resources:
             limits:
               cpu: 100m
-              memory: 512mi
+              memory: 512Mi
             requests:
               cpu: 100m
-              memory: 512mi
+              memory: 512Mi
           securityContext:
             runAsUser: 0
             readOnlyRootFilesystem: true
@@ -52,6 +55,9 @@ spec:
             - mountPath: /etc/os-release
               name: etc-os-release
               readOnly: true
+          ports:
+            - containerPort: 26756
+              name: http-prom
       dnsPolicy: ClusterFirst
       restartPolicy: Always
       securityContext: {}

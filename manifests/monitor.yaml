@@ -1,0 +1,11 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: ue-monitor
+spec:
+  podMetricsEndpoints:
+    - path: /metrics
+      port: http-prom
+  selector:
+    matchLabels:
+      app: flatcar-linux-ue-exporter
