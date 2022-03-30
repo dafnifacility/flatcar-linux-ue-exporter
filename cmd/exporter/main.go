@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/dafnifacility/flatcar-linux-ue-exporter/internal/html"
@@ -38,10 +39,21 @@ var (
 	})
 )
 
+func logRequestHandler(inner http.Handler) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		log.WithFields(log.Fields{
+			"client":     r.RemoteAddr,
+			"user-agent": r.Header.Get("user-agent"),
+		}).Info(strings.Join([]string{r.Proto, r.Method, r.URL.Path}, " "))
+		inner.ServeHTTP(w, r)
+	}
+}
+
 func runWebServer(cc *cli.Context) {
 	laddr := cc.String("listen-address")
-	http.Handle("/", http.FileServer(http.FS(html.Content)))
-	http.Handle("/metrics", promhttp.Handler())
+	http.HandleFunc("/", logRequestHandler(http.FileServer(http.FS(html.Content))))
+	http.HandleFunc("/metrics", logRequestHandler(promhttp.Handler()))
+	log.WithField("listen-addr", laddr).Info("starting HTTP server for metrics")
 	http.ListenAndServe(laddr, nil)
 }
 
@@ -130,6 +142,17 @@ func main() {
 				EnvVars: []string{"PRETEND"},
 				Value:   false,
 			},
+			&cli.BoolFlag{
+				Name:    "verbose",
+				EnvVars: []string{"VERBOSE"},
+				Value:   false,
+			},
+		},
+		Before: func(cc *cli.Context) error {
+			if cc.Bool("verbose") {
+				log.SetLevel(log.TraceLevel)
+			}
+			return nil
 		},
 	}
 	err := app.Run(os.Args)
