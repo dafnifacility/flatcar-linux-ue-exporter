@@ -46,6 +46,11 @@ var (
 		Subsystem: metricSubsystem,
 		Name:      "os",
 	}, []string{"id", "version", "board"})
+	metricCurrentKernelVersion = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace: metricNamespace,
+		Subsystem: metricSubsystem,
+		Name:      "kernel",
+	}, []string{"release"})
 )
 
 func logRequestHandler(inner http.Handler) http.HandlerFunc {
@@ -123,14 +128,22 @@ func setupSystemd() {
 func getSystemRelease() error {
 	rel, err := osrelease.Read()
 	if err != nil {
-		return err
+		log.WithError(err).Warn("unable to get os-release from filesystem")
+	} else {
+		metricCurrentOSVersion.WithLabelValues(rel["ID"], rel["VERSION"], rel["FLATCAR_BOARD"]).Set(1)
 	}
-	metricCurrentOSVersion.WithLabelValues(rel["ID"], rel["VERSION"], rel["BOARD"])
+	kv, err := getKernelVersion()
+	if err != nil {
+		log.WithError(err).Warning("unable to get kernel version")
+	} else {
+		metricCurrentKernelVersion.WithLabelValues(kv).Set(1)
+	}
 	return nil
 }
 
 func runExporter(cc *cli.Context) error {
 	go runWebServer(cc)
+	// We only check OS version once, because it can't change without a reboot anyway
 	err := getSystemRelease()
 	if err != nil {
 		log.WithError(err).Warning("unable to get operating system version")
