@@ -6,6 +6,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/dafnifacility/flatcar-linux-ue-exporter/internal/html"
 	"github.com/flatcar-linux/flatcar-linux-update-operator/pkg/updateengine"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -39,6 +40,7 @@ var (
 
 func runWebServer(cc *cli.Context) {
 	laddr := cc.String("listen-address")
+	http.Handle("/", http.FileServer(http.FS(html.Content)))
 	http.Handle("/metrics", promhttp.Handler())
 	http.ListenAndServe(laddr, nil)
 }
@@ -87,21 +89,30 @@ func runUpdateTime() {
 
 func runExporter(cc *cli.Context) error {
 	go runWebServer(cc)
-	ue, err := updateengine.New()
-	if err != nil {
-		return err
+	if !cc.Bool("pretend") {
+		ue, err := updateengine.New()
+		if err != nil {
+			return err
+		}
+		us := make(chan updateengine.Status, 1)
+		go ue.ReceiveStatuses(us, cc.Context.Done())
+		log.Debug("started update engine status client")
+		go runUpdateTime()
+		for st := range us {
+			log.WithField("status", st).Debug("engine status update")
+			metricLastDBUSUpdate.SetToCurrentTime()
+			metricLastCheckedTimestampSeconds.Set(float64(st.LastCheckedTime))
+			updateOpstatus(st.CurrentOperation)
+		}
+		return nil
+	} else {
+		for {
+			log.Warn("running in pretend mode - not actually checking with update engine!")
+			updateOpstatus(updateengine.UpdateStatusIdle)
+			runUpdateTime()
+			time.Sleep(10 * time.Second)
+		}
 	}
-	us := make(chan updateengine.Status, 1)
-	go ue.ReceiveStatuses(us, cc.Context.Done())
-	log.Debug("started update engine status client")
-	go runUpdateTime()
-	for st := range us {
-		log.WithField("status", st).Debug("engine status update")
-		metricLastDBUSUpdate.SetToCurrentTime()
-		metricLastCheckedTimestampSeconds.Set(float64(st.LastCheckedTime))
-		updateOpstatus(st.CurrentOperation)
-	}
-	return nil
 }
 
 func main() {
@@ -113,6 +124,11 @@ func main() {
 				Name:    "listen-address",
 				Aliases: []string{"l"},
 				Value:   ":26756",
+			},
+			&cli.BoolFlag{
+				Name:    "pretend",
+				EnvVars: []string{"PRETEND"},
+				Value:   false,
 			},
 		},
 	}
