@@ -3,6 +3,8 @@ module github.com/dafnifacility/flatcar-linux-ue-exporter
 go 1.18
 
 require (
+	github.com/acobaugh/osrelease v0.1.0
+	github.com/coreos/go-systemd v0.0.0-20191104093116-d3cd4ed1dbcf
 	github.com/flatcar-linux/flatcar-linux-update-operator v0.8.0
 	github.com/prometheus/client_golang v1.12.1
 	github.com/sirupsen/logrus v1.8.1

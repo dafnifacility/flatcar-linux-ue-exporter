@@ -7,36 +7,45 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dafnifacility/flatcar-linux-ue-exporter/internal/html"
+	"github.com/acobaugh/osrelease"
+	"github.com/coreos/go-systemd/daemon"
 	"github.com/flatcar-linux/flatcar-linux-update-operator/pkg/updateengine"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	log "github.com/sirupsen/logrus"
 	"github.com/urfave/cli/v2"
+
+	"github.com/dafnifacility/flatcar-linux-ue-exporter/internal/html"
+)
+
+const (
+	updateStatusPrefix = "UPDATE_STATUS_"
+	metricNamespace    = "flatcar_linux"
+	metricSubsystem    = "update_engine"
 )
 
 var (
 	metricLastCheckedTimestampSeconds = promauto.NewGauge(prometheus.GaugeOpts{
-		Namespace: "coreos",
-		Subsystem: "update_engine",
+		Namespace: metricNamespace,
+		Subsystem: metricSubsystem,
 		Name:      "last_checked_time_s",
 	})
 	metricLastDBUSUpdate = promauto.NewGauge(prometheus.GaugeOpts{
-		Namespace: "coreos",
-		Subsystem: "update_engine",
+		Namespace: metricNamespace,
+		Subsystem: metricSubsystem,
 		Name:      "last_dbus_update",
 	})
-	metricsHostStatus = promauto.NewGaugeVec(prometheus.GaugeOpts{
-		Namespace: "coreos",
-		Subsystem: "update_engine",
+	metricHostStatus = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace: metricNamespace,
+		Subsystem: metricSubsystem,
 		Name:      "status",
 	}, []string{"op"})
-	metricsCurrentStatusTime = promauto.NewGauge(prometheus.GaugeOpts{
-		Namespace: "coreos",
-		Subsystem: "update_engine",
-		Name:      "time_in_current_status_s",
-	})
+	metricCurrentOSVersion = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace: metricNamespace,
+		Subsystem: metricSubsystem,
+		Name:      "os",
+	}, []string{"id", "version", "board"})
 )
 
 func logRequestHandler(inner http.Handler) http.HandlerFunc {
@@ -60,8 +69,6 @@ func runWebServer(cc *cli.Context) {
 var currentStatus string
 var lastStateChangeTimestampSeconds time.Time
 
-const updateStatusPrefix = "UPDATE_STATUS_"
-
 func updateOpstatus(newstate string) {
 	for _, astate := range []string{
 		updateengine.UpdateStatusIdle,
@@ -75,9 +82,9 @@ func updateOpstatus(newstate string) {
 	} {
 		// Set the current state gauge to value 1, otherwise 0
 		if astate == newstate {
-			metricsHostStatus.WithLabelValues(astate[len(updateStatusPrefix):]).Set(1)
+			metricHostStatus.WithLabelValues(astate[len(updateStatusPrefix):]).Set(1)
 		} else {
-			metricsHostStatus.WithLabelValues(astate[len(updateStatusPrefix):]).Set(0)
+			metricHostStatus.WithLabelValues(astate[len(updateStatusPrefix):]).Set(0)
 		}
 	}
 	if currentStatus != newstate {
@@ -85,22 +92,49 @@ func updateOpstatus(newstate string) {
 		lastStateChangeTimestampSeconds = time.Now()
 		currentStatus = newstate
 	}
-	bumpTimeSinceUpdateGauge()
 }
 
-func bumpTimeSinceUpdateGauge() {
-	metricsCurrentStatusTime.Set(time.Since(lastStateChangeTimestampSeconds).Truncate(time.Second).Seconds())
-}
-
-func runUpdateTime() {
-	updater := time.Tick(60 * time.Second)
-	for range updater {
-		bumpTimeSinceUpdateGauge()
+func setupSystemd() {
+	if isset, err := daemon.SdNotify(false, daemon.SdNotifyReady); isset {
+		if err != nil {
+			log.WithError(err).Error("systemd daemon notification error, process may be restarted/fail under systemd")
+		} else {
+			log.Info("systemd notified exporter is ready")
+		}
+	} else {
+		log.Debug("not notifying manager due to no NOTIFY_SOCKET variable")
 	}
+	if interval, err := daemon.SdWatchdogEnabled(false); interval > 0 {
+		if err != nil {
+			log.WithError(err).Error("systemd watchdog setup error, process may be restarted by systemd")
+		} else {
+			log.Info("starting systemd watchdog handler")
+			go func(t time.Duration) {
+				for {
+					log.Trace("systemd watchdog ping")
+					time.Sleep(t / 2)
+					daemon.SdNotify(false, daemon.SdNotifyWatchdog)
+				}
+			}(interval)
+		}
+	}
+}
+
+func getSystemRelease() error {
+	rel, err := osrelease.Read()
+	if err != nil {
+		return err
+	}
+	metricCurrentOSVersion.WithLabelValues(rel["ID"], rel["VERSION"], rel["BOARD"])
+	return nil
 }
 
 func runExporter(cc *cli.Context) error {
 	go runWebServer(cc)
+	err := getSystemRelease()
+	if err != nil {
+		log.WithError(err).Warning("unable to get operating system version")
+	}
 	if !cc.Bool("pretend") {
 		ue, err := updateengine.New()
 		if err != nil {
@@ -108,8 +142,8 @@ func runExporter(cc *cli.Context) error {
 		}
 		us := make(chan updateengine.Status, 1)
 		go ue.ReceiveStatuses(us, cc.Context.Done())
+		setupSystemd()
 		log.Debug("started update engine status client")
-		go runUpdateTime()
 		for st := range us {
 			log.WithField("status", st).Debug("engine status update")
 			metricLastDBUSUpdate.SetToCurrentTime()
@@ -121,7 +155,6 @@ func runExporter(cc *cli.Context) error {
 		for {
 			log.Warn("running in pretend mode - not actually checking with update engine!")
 			updateOpstatus(updateengine.UpdateStatusIdle)
-			runUpdateTime()
 			time.Sleep(10 * time.Second)
 		}
 	}

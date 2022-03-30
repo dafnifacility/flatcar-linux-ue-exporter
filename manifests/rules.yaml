@@ -12,8 +12,9 @@ spec:
             message: Update engine may be broken
             severity_level: warning
             operating_system: flatcar_linux
+            subsystem: update_engine
           expr: |
-            max(time()-coreos_update_engine_last_checked_time_s) by (node)>3600
+            max(time()-flatcar_linux_update_engine_last_checked_time_s) by (node)>3600
           for: 1m
           labels:
             severity: warning
@@ -23,8 +24,9 @@ spec:
             message: Update engine may be broken
             severity_level: warning
             operating_system: flatcar_linux
+            subsystem: update_engine
           expr: |
-            sum(coreos_update_engine_status{op="REPORTING_ERROR_EVENT"}) by (node)==1
+            sum(flatcar_linux_update_engine_status{op="REPORTING_ERROR_EVENT"}) by (node)==1
           for: 1m
           labels:
             severity: warning
