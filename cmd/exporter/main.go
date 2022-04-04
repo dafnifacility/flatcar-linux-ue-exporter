@@ -60,6 +60,16 @@ var (
 		up, _ := kernel.Uptime()
 		return float64(up)
 	})
+	metricNewVersionAvailable = promauto.NewGauge(prometheus.GaugeOpts{
+		Namespace: metricNamespace,
+		Subsystem: metricSubsystem,
+		Name:      "new_version_available",
+	})
+	metricUpdateProgress = promauto.NewGauge(prometheus.GaugeOpts{
+		Namespace: metricNamespace,
+		Subsystem: metricSubsystem,
+		Name:      "update_progress_pct",
+	})
 )
 
 func logRequestHandler(inner http.Handler) http.HandlerFunc {
@@ -80,9 +90,6 @@ func runWebServer(cc *cli.Context) {
 	http.ListenAndServe(laddr, nil)
 }
 
-var currentStatus string
-var lastStateChangeTimestampSeconds time.Time
-
 func updateOpstatus(newstate string) {
 	for _, astate := range []string{
 		updateengine.UpdateStatusIdle,
@@ -100,11 +107,6 @@ func updateOpstatus(newstate string) {
 		} else {
 			metricHostStatus.WithLabelValues(astate[len(updateStatusPrefix):]).Set(0)
 		}
-	}
-	if currentStatus != newstate {
-		// Status has changed, set the variable
-		lastStateChangeTimestampSeconds = time.Now()
-		currentStatus = newstate
 	}
 }
 
@@ -166,13 +168,26 @@ func runExporter(cc *cli.Context) error {
 		go ue.ReceiveStatuses(us, cc.Context.Done())
 		setupSystemd()
 		log.Debug("started update engine status client")
-		for st := range us {
-			log.WithField("status", st).Debug("engine status update")
-			metricLastDBUSUpdate.SetToCurrentTime()
-			metricLastCheckedTimestampSeconds.Set(float64(st.LastCheckedTime))
-			updateOpstatus(st.CurrentOperation)
+		// We now enter an infinite loop where we wait for update statuses, processing each one in-turn
+		for err == nil {
+			select {
+			case st := <-us:
+				log.WithField("status", st).Debug("engine status update")
+				metricLastDBUSUpdate.SetToCurrentTime()
+				metricLastCheckedTimestampSeconds.Set(float64(st.LastCheckedTime))
+				updateOpstatus(st.CurrentOperation)
+				metricUpdateProgress.Set(st.Progress)
+				if st.NewVersion != "0.0.0" {
+					metricNewVersionAvailable.Set(1)
+				} else {
+					metricNewVersionAvailable.Set(0)
+				}
+			case <-cc.Context.Done():
+				log.Info("shutting down update engine exporter")
+				err = cli.Exit("normal exit", 0)
+			}
 		}
-		return nil
+		return err
 	} else {
 		for {
 			log.Warn("running in pretend mode - not actually checking with update engine!")
