@@ -11,3 +11,7 @@ import "errors"
 func Version() (string, error) {
 	return "notlinux", errors.New("not linux")
 }
+
+func Uptime() (int64, error) {
+	return -1, errors.New("uptime not available on non-linux platforms")
+}

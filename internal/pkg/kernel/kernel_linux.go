@@ -29,3 +29,9 @@ func Version() (string, error) {
 	}
 	return charsToString(utsname.Release[:]), nil
 }
+
+func Uptime() (int64, error) {
+	var si syscall.Sysinfo_t
+	err := syscall.Sysinfo(&si)
+	return si.Uptime, err
+}

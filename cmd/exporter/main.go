@@ -52,6 +52,14 @@ var (
 		Subsystem: metricSubsystem,
 		Name:      "kernel",
 	}, []string{"release"})
+	metricCurrentUptime = promauto.NewGaugeFunc(prometheus.GaugeOpts{
+		Namespace: metricNamespace,
+		Subsystem: metricSubsystem,
+		Name:      "system_uptime",
+	}, func() float64 {
+		up, _ := kernel.Uptime()
+		return float64(up)
+	})
 )
 
 func logRequestHandler(inner http.Handler) http.HandlerFunc {
