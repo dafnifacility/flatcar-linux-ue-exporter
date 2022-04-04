@@ -55,7 +55,7 @@ var (
 	metricCurrentUptime = promauto.NewGaugeFunc(prometheus.GaugeOpts{
 		Namespace: metricNamespace,
 		Subsystem: metricSubsystem,
-		Name:      "system_uptime",
+		Name:      "system_uptime_s",
 	}, func() float64 {
 		up, _ := kernel.Uptime()
 		return float64(up)
