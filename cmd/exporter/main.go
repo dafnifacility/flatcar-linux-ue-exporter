@@ -72,20 +72,40 @@ var (
 	})
 )
 
+func reqInfoFields(r *http.Request) log.Fields {
+	return log.Fields{
+		"client":     r.RemoteAddr,
+		"user-agent": r.Header.Get("user-agent"),
+	}
+}
+
 func logRequestHandler(inner http.Handler) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		log.WithFields(log.Fields{
-			"client":     r.RemoteAddr,
-			"user-agent": r.Header.Get("user-agent"),
-		}).Info(strings.Join([]string{r.Proto, r.Method, r.URL.Path}, " "))
+		log.WithFields(reqInfoFields(r)).Info(strings.Join([]string{r.Proto, r.Method, r.URL.Path}, " "))
 		inner.ServeHTTP(w, r)
 	}
+}
+
+var isReady = false
+
+var respOK http.HandlerFunc = func(rw http.ResponseWriter, req *http.Request) {
+	log.WithFields(reqInfoFields(req)).Debug(req.URL.Path)
+	rw.WriteHeader(http.StatusNoContent)
 }
 
 func runWebServer(cc *cli.Context) {
 	laddr := cc.String("listen-address")
 	http.HandleFunc("/", logRequestHandler(http.FileServer(http.FS(html.Content))))
 	http.HandleFunc("/metrics", logRequestHandler(promhttp.Handler()))
+	http.HandleFunc("/healthz", respOK)
+	http.HandleFunc("/readyz", func(rw http.ResponseWriter, req *http.Request) {
+		if isReady {
+			respOK(rw, req)
+		} else {
+			log.WithFields(reqInfoFields(req)).Warn("ready request but not connected to agent yet")
+			rw.WriteHeader(http.StatusServiceUnavailable)
+		}
+	})
 	log.WithField("listen-addr", laddr).Info("starting HTTP server for metrics")
 	http.ListenAndServe(laddr, nil)
 }
@@ -172,6 +192,7 @@ func runExporter(cc *cli.Context) error {
 		for err == nil {
 			select {
 			case st := <-us:
+				isReady = true
 				log.WithField("status", st).Debug("engine status update")
 				metricLastDBUSUpdate.SetToCurrentTime()
 				metricLastCheckedTimestampSeconds.Set(float64(st.LastCheckedTime))
